@@ -51,7 +51,7 @@
         .piece-container {
             cursor: grab;
             position: relative;
-            transform: scale(0.8);
+
         }
         .p-cell {
             width: 45px;
@@ -331,9 +331,9 @@
                 margin: 0;
                 padding: 0;
                 width: 100%;
-                height: 100%;
-                position: fixed;
-                overflow: hidden;
+                min-height: 100vh;  /* ✅ 改用 min-height */
+                overflow-x: hidden; /* ✅ 只禁止橫向滾動 */
+                overflow-y: auto;   /* ✅ 允許縱向滾動 */
             }
 
             body {
@@ -521,9 +521,7 @@
                     margin: 6px 0 !important;
                 }
 
-                .piece-container {
-                    transform: scale(0.7) !important;
-                }
+
 
                 .p-cell {
                     width: 38px !important;
@@ -3264,117 +3262,133 @@
 
     function setupPieceDragging(container, shapeObj) {
         let clone = null;
-        let moveHandler = null;
-        let upHandler = null;
+        let savedOffsetX = 0;
+        let savedOffsetY = 0;
 
         container.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
-            // 防止重複拖曳
             if (isDragging) return;
 
             isDragging = true;
             draggedPiece = container;
             currentShape = shapeObj;
 
-            // 創建拖曳中的視覺副本
-            clone = container.cloneNode(true);
+            const startPos = {
+                x: e.touches ? e.touches[0].clientX : e.clientX,
+                y: e.touches ? e.touches[0].clientY : e.clientY
+            };
+
+            const containerRect = container.getBoundingClientRect();
+
+            // 計算手指在原始容器內的偏移
+            savedOffsetX = startPos.x - containerRect.left;
+            savedOffsetY = startPos.y - containerRect.top;
+
+            const originalCellSize = 45;
+            const actualCellSize = containerRect.width / shapeObj.s[0].length;
+
+            // 重新建立 clone（不使用 piece-container 類別以避免 CSS scale 干擾）
+            clone = document.createElement('div');
             clone.style.position = 'fixed';
             clone.style.pointerEvents = 'none';
             clone.style.zIndex = '1000';
             clone.style.opacity = '0.9';
-            clone.style.transform = 'scale(1)';
+            clone.style.margin = '0';
+            clone.style.padding = '0';
+            clone.style.transform = 'none';
+            clone.style.width = containerRect.width + 'px';
+            clone.style.height = containerRect.height + 'px';
+
+            // 重新繪製格子
+            shapeObj.s.forEach((row, r) => {
+                row.forEach((cell, c) => {
+                    if (cell) {
+                        const cellDiv = document.createElement('div');
+                        cellDiv.className = 'p-cell filled';
+                        cellDiv.style.backgroundColor = shapeObj.color;
+                        cellDiv.style.position = 'absolute';
+                        cellDiv.style.width = actualCellSize + 'px';
+                        cellDiv.style.height = actualCellSize + 'px';
+                        cellDiv.style.left = (c * actualCellSize) + 'px';
+                        cellDiv.style.top = (r * actualCellSize) + 'px';
+                        cellDiv.style.borderRadius = '3px';
+                        cellDiv.style.boxShadow = 'inset 2px 2px 0 rgba(255,255,255,0.4), inset -2px -2px 0 rgba(0,0,0,0.2)';
+                        clone.appendChild(cellDiv);
+                    }
+                });
+            });
+
             document.body.appendChild(clone);
 
-            // 隱藏原件
-            container.style.opacity = '0.3';
-
-            // 記錄初始位置
-            const rect = container.getBoundingClientRect();
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            pieceStartX = rect.left;
-            pieceStartY = rect.top;
-
-            // 設置 clone 初始位置
-            clone.style.left = pieceStartX + 'px';
-            clone.style.top = pieceStartY + 'px';
-
-            // 計算拖曳偏移
-            calculateDragOffset(e, container, shapeObj);
-
-            // ✅ 定義事件處理器（只在這次拖曳中使用）
-            moveHandler = (e) => {
-                if (!isDragging || !clone) return;
-
-                // 移動 clone
-                const dx = e.clientX - dragStartX;
-                const dy = e.clientY - dragStartY;
-                clone.style.left = (pieceStartX + dx) + 'px';
-                clone.style.top = (pieceStartY + dy) + 'px';
-
-                // 計算當前位置對應的棋盤格子
-                updateGhostPreview(e);
+            // 定位函數
+            const positionClone = (fingerX, fingerY) => {
+                clone.style.left = (fingerX - savedOffsetX) + 'px';
+                clone.style.top = (fingerY - savedOffsetY) + 'px';
             };
 
-            upHandler = (e) => {
-                if (!isDragging) return;
+            // 初始定位
+            positionClone(startPos.x, startPos.y);
 
-                isDragging = false;
+            container.style.opacity = '0.3';
 
-                // ✅ 立即移除事件監聽器
+            // 計算 dragOffset（用於棋盤座標）
+            dragOffset.c = savedOffsetX / actualCellSize;
+            dragOffset.r = savedOffsetY / actualCellSize;
+
+            const moveHandler = (e) => {
+                if (!clone) return;
+
+                const currentPos = {
+                    x: e.touches ? e.touches[0].clientX : e.clientX,
+                    y: e.touches ? e.touches[0].clientY : e.clientY
+                };
+
+                positionClone(currentPos.x, currentPos.y);
+                updateGhostPreview({ clientX: currentPos.x, clientY: currentPos.y });
+            };
+
+            const upHandler = (e) => {
                 window.removeEventListener('pointermove', moveHandler);
                 window.removeEventListener('pointerup', upHandler);
+                window.removeEventListener('touchmove', moveHandler);
+                window.removeEventListener('touchend', upHandler);
 
-                // 移除 clone
                 if (clone) {
                     clone.remove();
                     clone = null;
                 }
 
-                // 嘗試放置
-                const placed = tryPlacePiece(e);
+                const finalPos = e.changedTouches ?
+                    { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY } :
+                    { x: e.clientX, y: e.clientY };
+
+                const placed = tryPlacePiece({ clientX: finalPos.x, clientY: finalPos.y });
 
                 if (placed) {
-                    // 成功放置，移除原件
                     draggedPiece.remove();
-
-                    // 檢查遊戲結束
                     setTimeout(() => {
-                        if(piecesArea.children.length === 0) {
+                        if (piecesArea.children.length === 0) {
                             renderNewPieces();
-                        } else if(isGameOver()) {
+                        } else if (isGameOver()) {
                             showGameOverPanel();
                         }
                     }, 100);
                 } else {
-                    // 放置失敗，恢復原件
                     draggedPiece.style.opacity = '1';
                 }
 
                 clearGhost();
                 draggedPiece = null;
+                isDragging = false;
             };
 
-            // ✅ 註冊事件監聽器
-            window.addEventListener('pointermove', moveHandler);
+            window.addEventListener('pointermove', moveHandler, { passive: false });
             window.addEventListener('pointerup', upHandler);
+            window.addEventListener('touchmove', moveHandler, { passive: false });
+            window.addEventListener('touchend', upHandler);
         });
-    }
-
-    function calculateDragOffset(e, container, shapeObj) {
-        const rect = container.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        const cellSize = 45;
-
-        // ✅ 直接用點擊位置計算偏移（不四捨五入）
-        dragOffset.c = clickX / cellSize;
-        dragOffset.r = clickY / cellSize;
-
-        console.log(`🎯 拖曳偏移: (${dragOffset.r.toFixed(2)}, ${dragOffset.c.toFixed(2)})`);
     }
 
 
@@ -5023,7 +5037,9 @@
 
     function startEndlessMode(type) {
         endlessModeActive = true;
+        window.endlessModeActive = true;  // 🔥 加上這一行！
         endlessModeType = type;
+        window.endlessModeType = type;  // 🔥 加上這一行！
         endlessModeStartTime = Date.now();
         endlessModeScore = parseInt(document.getElementById('score').textContent) || 0;
 
@@ -5085,7 +5101,10 @@
         showEndlessModeResult(finalScore, type, gameOver);
 
         endlessModeActive = false;
+        window.endlessModeActive = false;  // 🔥 加上這一行！
+
         endlessModeType = null;
+        window.endlessModeType = null;  // 🔥 加上這一行！
     }
 
     // ===== 第一步：在你的程式碼最上方，把變數暴露到 window =====
@@ -5209,10 +5228,10 @@
         }
     }
 
-    // click 攔截（原本的邏輯）
     function endlessModeClickInterceptor(e) {
         if (!window.endlessModeActive) return;
 
+        // AI 無盡模式：攔截方塊和棋盤
         if (window.endlessModeType === 'ai') {
             const isPieceElement = e.target.classList.contains('piece-container') ||
                 e.target.classList.contains('p-cell') ||
@@ -5227,10 +5246,11 @@
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 showAIEndlessModeWarning();
-                return;
+                return false;  // 🔥 確保有 return false
             }
         }
 
+        // 所有無盡模式：攔截 AI 相關按鈕
         const btn = e.target.closest('button');
         if (!btn) return;
 
@@ -5249,9 +5269,9 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             showEndlessModeWarning();
+            return false;  // 🔥 加上這一行！
         }
     }
-
 
     function showEndlessModeWarning() {
         if (document.getElementById('endless-mode-warning')) {
