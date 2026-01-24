@@ -686,6 +686,34 @@
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.3) !important;
         }
 
+
+        /* ===== 設定面板手機版優化 ===== */
+        @media (max-width: 768px) {
+            #game-settings-panel {
+                /* 尺寸調整 */
+                min-width: auto !important;
+                width: 92vw !important;
+                max-width: 420px !important;
+                max-height: 80vh !important;
+
+                /* 內距調整 */
+                padding: 25px 20px 15px 20px !important;
+
+                /* 允許滾動 */
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+            }
+
+            /* 關閉按鈕位置調整 */
+            #top-close-btn {
+                top: 10px !important;
+                right: 10px !important;
+                width: 32px !important;
+                height: 32px !important;
+                font-size: 18px !important;
+            }
+        }
+
     </style>
 </head>
 <body>
@@ -1154,7 +1182,6 @@
 
     const highScoreManager = new HighScoreManager();
 
-    // ========== 遊戲設定面板 ==========
     function createSettingsPanel() {
         // 檢查是否已存在
         if (document.getElementById('game-settings-panel')) {
@@ -1163,22 +1190,49 @@
 
         const panel = document.createElement('div');
         panel.id = 'game-settings-panel';
+
+        // ✅ 加入這段 CSS 樣式
         panel.style.cssText = `
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 30px;
+        padding: 30px 30px 20px 30px;
         border-radius: 20px;
         box-shadow: 0 20px 60px rgba(0,0,0,0.4);
         z-index: 10000;
         display: none;
         min-width: 500px;
+        max-width: 90vw;
+        max-height: 85vh;
+        overflow-y: auto;
         color: white;
+        -webkit-overflow-scrolling: touch;
     `;
 
         panel.innerHTML = `
+    <!-- ✅ 新增:右上角關閉按鈕 -->
+    <button id="top-close-btn" style="
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.2);
+        border: 2px solid rgba(255,255,255,0.4);
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+        transition: all 0.3s;
+    " onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+       onmouseout="this.style.background='rgba(255,255,255,0.2)'">✕</button>
+
     <div style="text-align: center; margin-bottom: 25px;">
         <h2 style="margin: 0; font-size: 28px; color: white;">⚙️ 遊戲設定</h2>
     </div>
@@ -1339,6 +1393,17 @@
     }
 
     function setupSettingsEvents() {
+
+        // ✅ 新增:右上角關閉按鈕
+        document.getElementById('top-close-btn')?.addEventListener('click', () => {
+            document.getElementById('game-settings-panel').style.display = 'none';
+        });
+
+        // 原有的關閉按鈕
+        document.getElementById('close-settings-btn')?.addEventListener('click', () => {
+            document.getElementById('game-settings-panel').style.display = 'none';
+        });
+
         const panel = document.getElementById('game-settings-panel');
 
         // 頭像上傳
@@ -3266,8 +3331,16 @@
         let savedOffsetY = 0;
 
         container.addEventListener('pointerdown', (e) => {
+            // ✅ 新增:阻止預設行為和事件冒泡
             e.preventDefault();
             e.stopPropagation();
+
+            // ✅ 只在觸控設備上禁止滾動
+            const isTouchDevice = e.pointerType === 'touch' || 'ontouchstart' in window;
+            if (isTouchDevice) {
+                document.body.style.overflow = 'hidden';
+                document.body.style.touchAction = 'none';
+            }
 
             if (isDragging) return;
 
@@ -3355,6 +3428,13 @@
                 window.removeEventListener('touchmove', moveHandler);
                 window.removeEventListener('touchend', upHandler);
 
+                // ✅ 恢復滾動
+                const isTouchDevice = e.pointerType === 'touch' || 'ontouchstart' in window;
+                if (isTouchDevice) {
+                    document.body.style.overflow = '';
+                    document.body.style.touchAction = '';
+                }
+
                 if (clone) {
                     clone.remove();
                     clone = null;
@@ -3394,19 +3474,17 @@
 
     function updateGhostPreview(e) {
         const boardRect = boardElement.getBoundingClientRect();
-        const cellSize = 47; // 45px + 2px gap
+        const cellSize = 47;
 
-        // 計算滑鼠位置相對於棋盤的格子座標
         const mouseX = e.clientX - boardRect.left;
         const mouseY = e.clientY - boardRect.top;
 
-        // ✅ 修正：用浮點數偏移計算更精準
-        const c = Math.round(mouseX / cellSize - dragOffset.c);
-        const r = Math.round(mouseY / cellSize - dragOffset.r);
+        // ✅ 改用 Math.floor 讓計算更寬容
+        const c = Math.floor((mouseX + cellSize/2) / cellSize - dragOffset.c);
+        const r = Math.floor((mouseY + cellSize/2) / cellSize - dragOffset.r);
 
         clearGhost();
 
-        // 檢查邊界
         if (r >= -1 && r <= 8 && c >= -1 && c <= 8) {
             if (canPlace(currentShape.s, r, c)) {
                 showGhost(currentShape.s, r, c);
@@ -3422,10 +3500,11 @@
         const mouseY = e.clientY - boardRect.top;
 
         // ✅ 使用相同的計算方式
-        const c = Math.round(mouseX / cellSize - dragOffset.c);
-        const r = Math.round(mouseY / cellSize - dragOffset.r);
+        const c = Math.floor((mouseX + cellSize/2) / cellSize - dragOffset.c);
+        const r = Math.floor((mouseY + cellSize/2) / cellSize - dragOffset.r);
 
         if (canPlace(currentShape.s, r, c)) {
+
             const currentPieces = getCurrentPieces();
             place(currentShape, r, c, currentPieces);
 
