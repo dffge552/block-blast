@@ -3479,15 +3479,26 @@
         const mouseX = e.clientX - boardRect.left;
         const mouseY = e.clientY - boardRect.top;
 
-        // ✅ 改用 Math.floor 讓計算更寬容
-        const c = Math.floor((mouseX + cellSize/2) / cellSize - dragOffset.c);
-        const r = Math.floor((mouseY + cellSize/2) / cellSize - dragOffset.r);
+        const baseC = Math.floor(mouseX / cellSize - dragOffset.c + 0.5);
+        const baseR = Math.floor(mouseY / cellSize - dragOffset.r + 0.5);
 
         clearGhost();
 
-        if (r >= -1 && r <= 8 && c >= -1 && c <= 8) {
-            if (canPlace(currentShape.s, r, c)) {
-                showGhost(currentShape.s, r, c);
+        // ✅ 嘗試周圍位置找到最近的可放置點
+        const tryPositions = [
+            [baseR, baseC],
+            [baseR - 1, baseC],
+            [baseR + 1, baseC],
+            [baseR, baseC - 1],
+            [baseR, baseC + 1]
+        ];
+
+        for (const [r, c] of tryPositions) {
+            if (r >= -1 && r <= 8 && c >= -1 && c <= 8) {
+                if (canPlace(currentShape.s, r, c)) {
+                    showGhost(currentShape.s, r, c);
+                    return; // 找到就停止
+                }
             }
         }
     }
@@ -3499,34 +3510,49 @@
         const mouseX = e.clientX - boardRect.left;
         const mouseY = e.clientY - boardRect.top;
 
-        // ✅ 使用相同的計算方式
-        const c = Math.floor((mouseX + cellSize/2) / cellSize - dragOffset.c);
-        const r = Math.floor((mouseY + cellSize/2) / cellSize - dragOffset.r);
+        // 原始計算位置
+        const baseC = Math.floor(mouseX / cellSize - dragOffset.c + 0.5);
+        const baseR = Math.floor(mouseY / cellSize - dragOffset.r + 0.5);
 
-        if (canPlace(currentShape.s, r, c)) {
+        // ✅ 嘗試周圍9個位置 (中心 + 上下左右 + 四個對角)
+        const tryPositions = [
+            [baseR, baseC],           // 中心
+            [baseR - 1, baseC],       // 上
+            [baseR + 1, baseC],       // 下
+            [baseR, baseC - 1],       // 左
+            [baseR, baseC + 1],       // 右
+            [baseR - 1, baseC - 1],   // 左上
+            [baseR - 1, baseC + 1],   // 右上
+            [baseR + 1, baseC - 1],   // 左下
+            [baseR + 1, baseC + 1]    // 右下
+        ];
 
-            const currentPieces = getCurrentPieces();
-            place(currentShape, r, c, currentPieces);
+        // 按照優先級嘗試放置
+        for (const [r, c] of tryPositions) {
+            if (canPlace(currentShape.s, r, c)) {
+                const currentPieces = getCurrentPieces();
+                place(currentShape, r, c, currentPieces);
 
-            // 記錄放置
-            if (!window.currentRoundPlacements) {
-                window.currentRoundPlacements = [];
+                // 記錄放置
+                if (!window.currentRoundPlacements) {
+                    window.currentRoundPlacements = [];
+                }
+                window.currentRoundPlacements.push({
+                    shape: JSON.parse(JSON.stringify(currentShape.s)),
+                    r: r,
+                    c: c
+                });
+
+                const beforeClear = getBoardFullLines();
+                checkAndClear();
+                const afterClear = getBoardFullLines();
+
+                if (beforeClear === afterClear) {
+                    streakCount = 0;
+                }
+
+                return true;
             }
-            window.currentRoundPlacements.push({
-                shape: JSON.parse(JSON.stringify(currentShape.s)),
-                r: r,
-                c: c
-            });
-
-            const beforeClear = getBoardFullLines();
-            checkAndClear();
-            const afterClear = getBoardFullLines();
-
-            if (beforeClear === afterClear) {
-                streakCount = 0;
-            }
-
-            return true;
         }
 
         return false;
