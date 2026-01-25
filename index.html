@@ -1353,7 +1353,7 @@
 
     <!-- 最高分記錄 -->
     <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-        <h3 style="margin: 0 0 15px 0; font-size: 18px; color: #FFD700;">🏆 最高分記錄</h3>
+        <h3 style="margin: 0 0 15px 0; font-size: 18px; color: #FFD700;">🏆 最高分紀錄</h3>
 
         <div style="display: grid; gap: 12px;">
             <div style="background: rgba(255,215,0,0.1); padding: 12px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
@@ -1541,9 +1541,9 @@
     `;
 
         highScoreContainer.innerHTML = `
-        <div style="font-size: 18px; color: #666; margin-bottom: 8px;">
-            <span style="font-size: 32px;">👑</span> 最高分記錄
-        </div>
+        <div style="font-size: 18px; color: white; margin-bottom: 8px;">
+    <span style="font-size: 32px;">👑</span> 最高分紀錄
+</div>
         <div id="overall-highscore-value" style="font-size: 36px; font-weight: bold; color: #FFD700;">${maxScore}</div>
     `;
 
@@ -6168,6 +6168,12 @@
     <button id="btn-upload" style="flex: 1; padding:10px; background:#4CAF50; border:none; color:white; border-radius:5px; cursor:pointer; font-weight: bold;">📁 選擇圖片</button>
     <button id="btn-paste" style="flex: 1; padding:10px; background:#2196F3; border:none; color:white; border-radius:5px; cursor:pointer; font-weight: bold;">📋 從剪貼簿貼上</button>
 </div>
+
+<div style="display: flex; gap: 10px; margin-top: 8px;">
+    <button id="btn-undo" style="flex: 1; padding:8px; background:#FF9800; border:none; color:white; border-radius:5px; cursor:pointer; font-weight: bold;">↶ 倒退一步</button>
+    <button id="btn-restart" style="flex: 1; padding:8px; background:#f44336; border:none; color:white; border-radius:5px; cursor:pointer; font-weight: bold;">🔄 重新開始</button>
+</div>
+
 <div id="paste-hint" style="text-align: center; margin-top: 8px; font-size: 12px; color: #FFD700; display: none;">
     💡 或直接按 Ctrl+V 貼上截圖
 </div>
@@ -6342,6 +6348,14 @@
             font-size: 13px !important;
             padding: 10px !important;
         }
+
+/* 新增：倒退和重新開始按鈕 */
+#btn-undo, #btn-restart {
+    font-size: 12px !important;
+    padding: 8px !important;
+}
+
+
 
         #paste-hint {
             font-size: 11px !important;
@@ -6593,6 +6607,7 @@
                         points = [];
                         updateOCRStatus();
 
+
                         // 顯示成功提示
                         const status = document.getElementById('ocr-status');
                         status.textContent = '✅ 圖片已載入！開始標記四個角(由左上角開始標記)';
@@ -6610,6 +6625,57 @@
                 }
             };
 
+            // 倒退按鈕功能
+            document.getElementById('btn-undo').onclick = () => {
+                if (points.length === 0) {
+                    showNotification('沒有可以倒退的步驟', 'info', 2000);
+                    return;
+                }
+
+                points.pop();
+
+                // 重繪畫布
+                if (imgData) {
+                    ctx.putImageData(imgData, 0, 0);
+                    points.forEach((p, i) => drawMarker(p.x, p.y, i + 1));
+                }
+
+                updateOCRStatus();
+            };
+
+// 重新// 重新開始按鈕功能（完全重置，包括清除圖片）
+            document.getElementById('btn-restart').onclick = () => {
+                // 清空標記點
+                points = [];
+
+                // 清空畫布
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 清空圖片數據
+                imgData = null;
+
+                // 重置畫布尺寸
+                canvas.width = 0;
+                canvas.height = 0;
+
+                // 顯示提示文字
+                document.getElementById('canvas-hint').style.display = 'block';
+
+                // 重置狀態提示
+                const status = document.getElementById('ocr-status');
+                status.textContent = '第一步：上傳截圖';
+                status.style.background = '#4CAF50';
+
+                // 隱藏貼上提示
+                document.getElementById('paste-hint').style.display = 'none';
+
+                // 重置檔案輸入
+                document.getElementById('file-input').value = '';
+            };
+
+// 更新按鈕顯示狀態
+
+
         canvas.onclick = (e) => {
             if (!imgData || points.length >= 5) return;
             const rect = canvas.getBoundingClientRect();
@@ -6620,30 +6686,37 @@
             drawMarker(x, y, points.length);
             updateOCRStatus();
 
+
             if (points.length === 5) {
                 processOCR();
             }
         };
 
-        function drawMarker(x, y, num) {
-            // 外圈（紅色）
-            ctx.fillStyle = '#FF5722';
-            ctx.beginPath();
-            ctx.arc(x, y, 15, 0, Math.PI * 2);
-            ctx.fill();
+            function drawMarker(x, y, num) {
+                // 根據螢幕寬度調整大小
+                const isMobile = window.innerWidth <= 768;
+                const outerRadius = isMobile ? 28 : 15;      // ✅ 改成 40px（更大）
+                const fontSize = isMobile ? 38 : 18;          // ✅ 改成 38px（更大）
+                const lineWidth = isMobile ? 6 : 3;           // ✅ 改成 6px（更粗）
 
-            // 白色邊框
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 3;
-            ctx.stroke();
+                // 外圈（紅色）
+                ctx.fillStyle = '#FF5722';
+                ctx.beginPath();
+                ctx.arc(x, y, outerRadius, 0, Math.PI * 2);
+                ctx.fill();
 
-            // 數字
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 18px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(num, x, y);
-        }
+                // 白色邊框
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+
+                // 數字
+                ctx.fillStyle = 'white';
+                ctx.font = `bold ${fontSize}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(num, x, y);
+            }
 
         // 在 openOCRDialog() 函數內
 
