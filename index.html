@@ -961,6 +961,10 @@
         { s: [[1],[1],[1],[1]], color: '#42a5f5', name: '直四' },
         { s: [[1,1],[1,1]], color: '#66bb6a', name: '田字' },
 
+        // === 斜向 4格 ===
+        { s: [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]], color: '#ff6f00', name: '右斜四', code: '4dr' },
+        { s: [[0,0,0,1],[0,0,1,0],[0,1,0,0],[1,0,0,0]], color: '#ff6f00', name: '左斜四', code: '4dl' },
+
 // T字 4個方向 ✅
         { s: [[1,1,1],[0,1,0]], color: '#ba68c8', name: 'T字上' },
         { s: [[0,1,0],[1,1,1]], color: '#ba68c8', name: 'T字下' },
@@ -3355,14 +3359,17 @@
 
             const containerRect = container.getBoundingClientRect();
 
-            // 計算手指在原始容器內的偏移
+// 計算手指在原始容器內的偏移
             savedOffsetX = startPos.x - containerRect.left;
             savedOffsetY = startPos.y - containerRect.top;
 
-            const originalCellSize = 45;
-            const actualCellSize = containerRect.width / shapeObj.s[0].length;
+// ✅ 使用較小的邊確保格子是正方形
+            const actualCellSize = Math.min(
+                containerRect.width / shapeObj.s[0].length,
+                containerRect.height / shapeObj.s.length
+            );
 
-            // 重新建立 clone（不使用 piece-container 類別以避免 CSS scale 干擾）
+// 重新建立 clone（不使用 piece-container 類別以避免 CSS scale 干擾）
             clone = document.createElement('div');
             clone.style.position = 'fixed';
             clone.style.pointerEvents = 'none';
@@ -3371,8 +3378,9 @@
             clone.style.margin = '0';
             clone.style.padding = '0';
             clone.style.transform = 'none';
-            clone.style.width = containerRect.width + 'px';
-            clone.style.height = containerRect.height + 'px';
+// ✅ 使用方塊陣列的實際大小
+            clone.style.width = (shapeObj.s[0].length * actualCellSize) + 'px';
+            clone.style.height = (shapeObj.s.length * actualCellSize) + 'px';
 
             // 重新繪製格子
             shapeObj.s.forEach((row, r) => {
@@ -3406,9 +3414,9 @@
 
             container.style.opacity = '0.3';
 
-            // 計算 dragOffset（用於棋盤座標）
-            dragOffset.c = savedOffsetX / actualCellSize;
-            dragOffset.r = savedOffsetY / actualCellSize;
+            // ✅ 用比例計算 dragOffset
+            dragOffset.c = (savedOffsetX / containerRect.width) * shapeObj.s[0].length;
+            dragOffset.r = (savedOffsetY / containerRect.height) * shapeObj.s.length;
 
             const moveHandler = (e) => {
                 if (!clone) return;
@@ -3696,44 +3704,48 @@
         gap: 16px;
     `;
 
+        // ✅ 重來此回合按鈕
+        const retryBtn = document.createElement('button');
+        retryBtn.textContent = '🔄 重來此回合';
+        retryBtn.style.cssText = `
+    padding: 12px 32px;
+    background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(66, 165, 245, 0.4);
+`;
+        retryBtn.onclick = () => {
+            panel.remove();
+            overlay.remove();
+            retryCurrentRound();
+        };
+
+// 完全重新開始按鈕
         const restartBtn = document.createElement('button');
-        restartBtn.textContent = '🔄 重新開始';
+        restartBtn.textContent = '🆕 重新開始';
         restartBtn.style.cssText = `
-        padding: 12px 32px;
-        background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 16px;
-        font-weight: bold;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(102, 187, 106, 0.4);
-    `;
+    padding: 12px 32px;
+    background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(102, 187, 106, 0.4);
+`;
         restartBtn.onclick = () => {
             panel.remove();
             overlay.remove();
             location.reload();
         };
 
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = '✕ 關閉';
-        closeBtn.style.cssText = `
-        padding: 12px 32px;
-        background: #757575;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 16px;
-        font-weight: bold;
-        cursor: pointer;
-    `;
-        closeBtn.onclick = () => {
-            panel.remove();
-            overlay.remove();
-        };
-
-        footer.appendChild(restartBtn);
-        footer.appendChild(closeBtn);
+        footer.appendChild(retryBtn);      // 重來此回合
+        footer.appendChild(restartBtn);    // 完全重新開始
 
         panel.appendChild(header);
         panel.appendChild(content);
@@ -3781,6 +3793,96 @@
         const wrongPos = `第 ${lastUserPlace.r + 1} 行，第 ${lastUserPlace.c + 1} 列`;
 
         return `由於您將 <strong>${wrongShapeName}</strong> 方塊放在 <strong>${wrongPos}</strong> 位置不當，佔用了關鍵空間，導致剩餘方塊無法放置，造成死局。`;
+    }
+
+
+    function retryCurrentRound() {
+        // ✅ 持續悔步，直到恢復到有3個方塊的狀態
+        while (moveHistory.length > 0) {
+            const lastMove = moveHistory[moveHistory.length - 1];
+
+            // 檢查這一步之前是否有3個方塊
+            if (lastMove.piecesBefore && lastMove.piecesBefore.length === 3) {
+                // 找到了！執行最後一次悔步
+                undoMove();
+                console.log('✅ 已恢復到本回合開始（3個方塊）');
+                break;
+            } else {
+                // 還沒找到，繼續往回悔
+                undoMove();
+            }
+        }
+
+        // 如果 moveHistory 已經空了但還沒找到3個方塊的狀態
+        if (moveHistory.length === 0) {
+            console.warn('⚠️ 無法找到本回合開始狀態');
+            // 重新生成方塊（保底方案）
+            if (window.currentRoundPieces && window.currentRoundPieces.length > 0) {
+                renderSavedPieces();
+            } else {
+                renderNewPieces();
+            }
+        }
+
+        // 分數歸零（因為要重來此回合）
+        score = 0;
+        document.getElementById('score').innerText = score;
+
+        // ✅ 如果在無盡模式，退出無盡模式
+        if (endlessModeActive) {
+            endlessModeActive = false;
+            endlessModeScore = 0;
+            if (endlessModeTimer) {
+                clearInterval(endlessModeTimer);
+                endlessModeTimer = null;
+            }
+            const endlessUI = document.getElementById('endlessModeUI');
+            if (endlessUI) {
+                endlessUI.style.display = 'none';
+            }
+        }
+
+        // ✅ 清空連擊計數
+        streakCount = 0;
+        lastMoveCleared = false;
+
+        console.log('🔄 重來此回合完成');
+    }
+
+    // 輔助函數：渲染已保存的方塊
+    function renderSavedPieces() {
+        piecesArea.innerHTML = '';
+        window.currentRoundPieces.forEach((pieceData, index) => {
+            const container = document.createElement('div');
+            container.className = 'piece-container';
+            container.dataset.index = index;
+
+            const shapeObj = {
+                s: JSON.parse(JSON.stringify(pieceData.shape)),
+                color: pieceData.color
+            };
+
+            const width = shapeObj.s[0].length * 45;
+            const height = shapeObj.s.length * 45;
+            container.style.width = width + 'px';
+            container.style.height = height + 'px';
+
+            shapeObj.s.forEach((row, r) => {
+                row.forEach((cell, c) => {
+                    if(cell) {
+                        const div = document.createElement('div');
+                        div.className = 'p-cell filled';
+                        div.style.backgroundColor = shapeObj.color;
+                        div.style.left = (c * 45) + 'px';
+                        div.style.top = (r * 45) + 'px';
+                        container.appendChild(div);
+                    }
+                });
+            });
+
+            setupPieceDragging(container, shapeObj);
+            piecesArea.appendChild(container);
+        });
     }
 
     // ===== 5. 修改棋盘可视化函数，标记所有错误位置 =====
@@ -5967,6 +6069,8 @@
         '凹字上': '4Vu',
         '凹字左': '4Vl',
         '凹字右': '4Vr',
+        '右斜四': '4dr',  // 🆕
+        '左斜四': '4dl',  // 🆕
         '十字': '4+',
 
         // === 5格 ===
@@ -9975,6 +10079,10 @@
             { s: [[1,1,1,1]], color: '#42a5f5', name: '橫四', code: '4h' },
             { s: [[1],[1],[1],[1]], color: '#42a5f5', name: '直四', code: '4v' },
             { s: [[1,1],[1,1]], color: '#66bb6a', name: '田字', code: '4s' },
+
+            // === 斜向 4格 ===
+            { s: [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]], color: '#ff6f00', name: '右斜四', code: '4dr' },
+            { s: [[0,0,0,1],[0,0,1,0],[0,1,0,0],[1,0,0,0]], color: '#ff6f00', name: '左斜四', code: '4dl' },
 
             // T字 4個方向
             { s: [[1,1,1],[0,1,0]], color: '#ba68c8', name: 'T字上', code: '4Tu' },
