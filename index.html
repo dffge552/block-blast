@@ -738,6 +738,8 @@
     let pieceStartX = 0;
     let pieceStartY = 0;
 
+
+
     // ===== 新增：計分系統變數 =====
     let streakCount = 0; // 連續消除回合數
     let lastMoveCleared = false; // 上一步是否有消除
@@ -1061,6 +1063,8 @@
     class GameSettings {
         constructor() {
             this.boardMode = localStorage.getItem('woodoku_board_mode') || 'endgame';
+            // ✅ 新增：死局回顧設定，預設為 true（開啟）
+            this.showDeadlockReview = localStorage.getItem('woodoku_show_deadlock_review') !== 'false';
         }
 
         setBoardMode(mode) {
@@ -1070,6 +1074,17 @@
 
         getBoardMode() {
             return this.boardMode;
+        }
+
+        // ✅ 新增：設定死局回顧開關
+        setShowDeadlockReview(value) {
+            this.showDeadlockReview = value;
+            localStorage.setItem('woodoku_show_deadlock_review', value);
+        }
+
+        // ✅ 新增：取得死局回顧設定
+        getShowDeadlockReview() {
+            return this.showDeadlockReview;
         }
     }
 
@@ -1185,6 +1200,8 @@
     }
 
     const highScoreManager = new HighScoreManager();
+
+
 
     function createSettingsPanel() {
         // 檢查是否已存在
@@ -1326,6 +1343,20 @@
     </div>
 </div>
 
+<!-- 死局回顧開關 -->
+<div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+    <h3 style="margin: 0 0 15px 0; font-size: 18px; color: #FFD700;">🔍 死局回顧</h3>
+
+    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+        <div>
+            <div style="font-size: 16px; font-weight: bold;">顯示死局回顧</div>
+            <div style="font-size: 12px; color: rgba(255,255,255,0.7);">遊戲結束時顯示最佳解法分析</div>
+        </div>
+        <input type="checkbox" id="deadlock-review-toggle" ${gameSettings.getShowDeadlockReview() ? 'checked' : ''}
+               style="width: 24px; height: 24px; cursor: pointer; accent-color: #4CAF50;">
+    </label>
+</div>
+
 <style>
 .board-mode-option {
     display: flex;
@@ -1427,6 +1458,12 @@
             const newName = document.getElementById('player-name-input').value.trim();
             userProfile.setName(newName);
             showNotification('資料已保存！', 'success');
+        });
+
+        // ✅ 死局回顧開關
+        document.getElementById('deadlock-review-toggle')?.addEventListener('change', (e) => {
+            gameSettings.setShowDeadlockReview(e.target.checked);
+            showNotification(e.target.checked ? '已開啟死局回顧' : '已關閉死局回顧', 'info');
         });
 
         // 棋盤模式選擇
@@ -3059,15 +3096,59 @@
         const pieces = getCurrentPieces();
         const gameOver = pieces.every(piece => !hasValidPlacement(piece.s, boardState));
 
-        // ✅ 如果在無盡模式且遊戲結束，觸發無盡模式結束
-        if (gameOver && endlessModeActive) {
-            // 使用 setTimeout 避免阻塞當前流程
-            setTimeout(() => {
-                endEndlessMode(true); // true 表示因遊戲失敗而結束
-            }, 100);
+        if (gameOver) {
+            // ✅ 如果在無盡模式且遊戲結束
+            if (endlessModeActive) {
+                setTimeout(() => {
+                    endEndlessMode(true); // true 表示因遊戲失敗而結束
+                }, 100);
+            }
+            // ✅ 一般模式的遊戲結束處理
+            else {
+                setTimeout(() => {
+                    if (gameSettings.getShowDeadlockReview()) {
+                        // 顯示死局分析
+                        showGameOverPanel();
+                    } else {
+                        // 直接顯示遊戲結束
+                        showSimpleGameOver();
+                    }
+                }, 100);
+            }
         }
 
         return gameOver;
+    }
+
+    function showSimpleGameOver() {
+        // ✅ 直接從 DOM 讀取文字內容並轉換成數字
+        const finalScore = parseInt(document.getElementById('score').innerText) || 0;
+
+        const highScore = highScoreManager.getScore('infinite');
+        const isNewRecord = finalScore > highScore;
+
+        if (isNewRecord) {
+            highScoreManager.updateScore('infinite', finalScore);
+        }
+
+        const message = `
+        🎮 遊戲結束！
+
+        最終得分: ${finalScore}
+        ${isNewRecord ? '🎉 新紀錄！' : `最高分: ${highScore}`}
+
+        是否重新開始？
+    `;
+
+        showConfirmDialog(
+            message.replace(/\n/g, '<br>'),
+            () => {
+                restartGame();
+            },
+            () => {
+                console.log('玩家選擇不重新開始');
+            }
+        );
     }
 
     function init() {
@@ -3363,11 +3444,10 @@
             savedOffsetX = startPos.x - containerRect.left;
             savedOffsetY = startPos.y - containerRect.top;
 
-// ✅ 使用較小的邊確保格子是正方形
-            const actualCellSize = Math.min(
-                containerRect.width / shapeObj.s[0].length,
-                containerRect.height / shapeObj.s.length
-            );
+
+            // ✅ 直接從預選欄的實際 cell 取得尺寸
+            const originalCell = container.querySelector('.p-cell.filled');
+            const actualCellSize = originalCell ? originalCell.getBoundingClientRect().width : 30;
 
 // 重新建立 clone（不使用 piece-container 類別以避免 CSS scale 干擾）
             clone = document.createElement('div');
@@ -3390,12 +3470,17 @@
                         cellDiv.className = 'p-cell filled';
                         cellDiv.style.backgroundColor = shapeObj.color;
                         cellDiv.style.position = 'absolute';
-                        cellDiv.style.width = actualCellSize + 'px';
-                        cellDiv.style.height = actualCellSize + 'px';
-                        cellDiv.style.left = (c * actualCellSize) + 'px';
-                        cellDiv.style.top = (r * actualCellSize) + 'px';
-                        cellDiv.style.borderRadius = '3px';
-                        cellDiv.style.boxShadow = 'inset 2px 2px 0 rgba(255,255,255,0.4), inset -2px -2px 0 rgba(0,0,0,0.2)';
+                        // ✅ 加上 cssText 來強制覆蓋 CSS
+                        cellDiv.style.cssText = `
+                position: absolute !important;
+                width: ${actualCellSize}px !important;
+                height: ${actualCellSize}px !important;
+                left: ${c * actualCellSize}px !important;
+                top: ${r * actualCellSize}px !important;
+                background-color: ${shapeObj.color} !important;
+                border-radius: 3px !important;
+                box-shadow: inset 2px 2px 0 rgba(255,255,255,0.4), inset -2px -2px 0 rgba(0,0,0,0.2) !important;
+            `;
                         clone.appendChild(cellDiv);
                     }
                 });
@@ -3459,8 +3544,9 @@
                     setTimeout(() => {
                         if (piecesArea.children.length === 0) {
                             renderNewPieces();
-                        } else if (isGameOver()) {
-                            showGameOverPanel();
+                        } else {
+                            // ✅ 只檢查，不處理。處理邏輯交給 isGameOver() 函數
+                            isGameOver();
                         }
                     }, 100);
                 } else {
@@ -10005,8 +10091,8 @@
 
             <h3 style="font-size: 18px; margin-top: 15px; color: #ffd54f;">🤖 AI 智能輔助</h3>
             <ul style="line-height: 1.8; font-size: 16px;">
-                <li><strong>AI Analysis</strong>：即時顯示當前局面的最佳放置點</li>
-                <li><strong>AI Guide</strong>：彈出分步驟視窗，視覺化標示建議順序</li>
+                <li><strong>AI 分析</strong>：即時顯示當前局面的最佳放置點</li>
+                <li><strong>AI 指導</strong>：彈出分步驟視窗，視覺化標示建議順序</li>
             </ul>
 
             <h3 style="font-size: 18px; margin-top: 15px; color: #ffd54f;">🛠️ 局面編輯器與 BFEN 碼</h3>
